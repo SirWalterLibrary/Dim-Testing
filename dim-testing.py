@@ -11,8 +11,14 @@ def resource_path(relative_path):
 # To load the model
 knn = joblib.load(resource_path('model.joblib'))
 
+# Select the CSV with actual dimensions
+dims_boxes = filedialog.askopenfilename(
+    title="Select Actual Dim Boxes",
+    filetypes=[("Log Files", "*.csv"), ("All Files", "*.*")]
+)
+
 # Load the validation dataset
-validate = pd.read_csv(resource_path('Xactual.csv'))
+validate = pd.read_csv(dims_boxes)
 
 # Select the log file
 log_file = filedialog.askopenfilename(
@@ -60,7 +66,7 @@ if count_ole > 0 or count_owi > 0 or count_ohi > 0:
     # Print the occurrences each time length, width, and height is off 
     print(f"Length is off:  {count_ole} out of {total_rows} time(s)")
     print(f"Width  is off:  {count_owi} ouf of {total_rows} time(s)")
-    print(f"Height is off:  {count_ohi} out of {total_rows} time(s)")
+    print(f"Height is off:  {count_ohi} out of {total_rows} time(s)\n")
 
 else:
     print(f"No errors!") 
@@ -73,15 +79,26 @@ mask = (round(merged_df['ΔLength'].abs(), 1) > 0.2) | \
 filtered_df = merged_df[mask]
 total_bad = filtered_df.shape[0]
 
-# Count occurrences of each unique set of box have failed
+# Count occurrences of each unique set of box failures
 failure_counts = filtered_df.groupby(['Box']).size()
-failed_boxes = filtered_df[['Index', 'Length', 'Width', 'Height', 'Box']].to_string(index=False)
+
+# Sort the filtered DataFrame by the 'Index' column
+sorted_failed_boxes = filtered_df[['Index', 'Length', 'Width', 'Height', 'Box']].sort_values(by=['Box', 'Index'])
+
+# Convert the sorted DataFrame to a string without the default index
+failed_boxes = sorted_failed_boxes.to_string(index=False)
 
 # Print boxes that fail
 for label, count in failure_counts.items():
-    print(f"\nBox {label} is out of spec {count} time(s)")
+    print(f"Box {label} is out of spec {count} time(s)")
+    
+# Set the display option to expand the column width
+pd.set_option('display.max_colwidth', None)
 
-print(f"\n{total_bad} out of {total_rows} boxes failed:\n", failed_boxes)
+# Calculate and print the success rate
+success_rate = (total_rows - total_bad) / total_rows * 100
+print(f"\n{total_bad} out of {total_rows} boxes failed: {success_rate:.2f}% success rate\n\n", failed_boxes)
+
 
 # Get the base name (filename with extension)
 base_name = os.path.basename(log_file)
@@ -90,9 +107,8 @@ base_name = os.path.basename(log_file)
 file_name, file_extension = os.path.splitext(base_name)
 output_df = merged_df[['Index', 'Length', 'Width', 'Height', 'Box', 'ΔLength', 'ΔWidth', 'ΔHeight']]
 
-
 # Create a directory to store HTML files
-output_dir = 'output'
+output_dir = 'excel_output'
 os.makedirs(output_dir, exist_ok=True)
 
 output_df.to_excel(os.path.join(output_dir, file_name + '.xlsx'), index=False)
