@@ -2,15 +2,17 @@ import os
 import sys
 import joblib
 import pandas as pd
+import tkinter as tk
+from tkinter import ttk
 from tkinter import filedialog
 from itertools import permutations
 
 def calculate_min_difference(row):
-    expected_dims = (row['Length Actual'], row['Width Actual'], row['Height Actual'])
-    result_dims = (row['Length'], row['Result Width'], row['Result Height'])
+    actual_dims = (row['Length Actual'], row['Width Actual'], row['Height Actual'])
+    result_dims = (row['Length'], row['Width'], row['Height'])
     
     # Generate all permutations (rotations) of the expected dimensions
-    rotations = list(permutations(expected_dims))
+    rotations = list(permutations(actual_dims))
     
     min_difference = None
     best_rotation = None
@@ -36,17 +38,51 @@ def resource_path(relative_path):
         base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
         return os.path.join(base_path, relative_path)
 
+def filter_boxes():
+    global filtered_boxes  # Declare filtered_df as a global variable
+    # Get the selected box sizes
+    selected_boxes = [box for box, var in checkboxes.items() if var.get() == '1']
+    
+    # Filter the DataFrame to include only the selected box sizes
+    filtered_boxes = box_df[box_df['Box'].isin(selected_boxes)]
+        
+    # Close the UI
+    root.destroy()
+
 # To load the model
 knn = joblib.load(resource_path('model.joblib'))
 
-# Select the CSV with actual dimensions
-dims_boxes = filedialog.askopenfilename(
-    title="Select Actual Dim Boxes",
-    filetypes=[("Log Files", "*.csv"), ("All Files", "*.*")]
-)
+# Load the CSV with actual dimensions
+box_df = pd.read_csv('Xactual.csv')
 
-# Load the validation dataset
-validate = pd.read_csv(dims_boxes)
+# Get unique box sizes from the "Box" column
+unique_boxes = box_df['Box'].unique()
+
+# Create the tkinter window
+root = tk.Tk()
+root.title("Select Relevant Box Sizes")
+
+# Make the window stay on top of other windows
+root.attributes('-topmost', True)
+
+# Create a dictionary to hold checkboxes
+checkboxes = {}
+
+# Add a checkbox for each unique box size
+for box in unique_boxes:
+    var = tk.StringVar(value='1')  # Set default to selected
+    checkbox = ttk.Checkbutton(root, text=box, variable=var)
+    checkbox.pack(anchor='w')
+    checkboxes[box] = var
+
+# Add a button to confirm selection
+button = ttk.Button(root, text="Filter Boxes", command=filter_boxes)
+button.pack()
+
+# Run the tkinter main loop
+root.mainloop()
+
+
 
 # Select the log file
 log_file = filedialog.askopenfilename(
@@ -66,7 +102,7 @@ meas_df[['Length', 'Width', 'Height']] = (meas_df[['Length', 'Width', 'Height']]
 meas_df.loc[:,'Box'] = knn.predict((meas_df[['Length', 'Width', 'Height']]))
 
 # Merge the DataFrames based on the label column, preserving the order of meas_df
-merged_df = meas_df.merge(validate, on='Box', suffixes=(' Measured', ' Actual'), how='left')
+merged_df = meas_df.merge(filtered_boxes, on='Box', suffixes=(' Measured', ' Actual'), how='left')
 
 # Rename the columns for cleaner look in Excel
 merged_df.rename(columns={
@@ -79,14 +115,10 @@ merged_df.rename(columns={
 for col in ['Length', 'Width', 'Height']:
     merged_df[f'Δ{col}'] = merged_df[f'{col}'] - merged_df[f'{col} Actual']
 
-result = [merged_df[f'{col}'] for col in ['Length', 'Width', 'Height']]
-
-expected = [merged_df[f'{col} Actual'] for col in ['Length', 'Width', 'Height']]
-
-difference_df = merged_df.apply(calculate_min_difference, axis=1)
+merged_df[[f'Δ{col}' for col in ['Length', 'Width', 'Height']]] = merged_df.apply(calculate_min_difference, axis=1).astype(float)
 
 # Select only the columns containing the differences
-# difference_df = merged_df[[f'Δ{col}' for col in ['Length', 'Width', 'Height']]]
+difference_df = merged_df[[f'Δ{col}' for col in ['Length', 'Width', 'Height']]]
 
 # Calculate the frequency each column is out of spec (greater than ± 0.2)
 count_ole, count_owi, count_ohi = [sum((round(difference_df[f'Δ{dim}'].abs(), 1) > 0.2)) for dim in ['Length', 'Width', 'Height']]
