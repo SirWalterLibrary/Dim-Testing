@@ -3,6 +3,34 @@ import sys
 import joblib
 import pandas as pd
 from tkinter import filedialog
+from itertools import permutations
+
+def calculate_min_difference(row):
+    expected_dims = (row['Length Actual'], row['Width Actual'], row['Height Actual'])
+    result_dims = (row['Length'], row['Result Width'], row['Result Height'])
+    
+    # Generate all permutations (rotations) of the expected dimensions
+    rotations = list(permutations(expected_dims))
+    
+    min_difference = None
+    best_rotation = None
+    
+    for rotation in rotations:
+        # Calculate the difference for this rotation
+        difference = [result_dims[i] - rotation[i] for i in range(3)]
+        
+        # Compute the total absolute difference
+        total_difference = sum(abs(diff) for diff in difference)
+        
+        # Update minimum difference and best rotation
+        if min_difference is None or total_difference < min_difference:
+            min_difference = total_difference
+            best_rotation = rotation
+    
+    # Format differences to .2f
+    formatted_difference = [f"{diff:.2f}" for diff in [result_dims[i] - best_rotation[i] for i in range(3)]]
+    
+    return pd.Series(formatted_difference, index=['Difference Length', 'Difference Width', 'Difference Height'])
 
 def resource_path(relative_path):
         base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
@@ -29,21 +57,21 @@ log_file = filedialog.askopenfilename(
 # Print the name of the path of log file
 print("Current file path:", os.path.abspath(log_file), "\n")
 
-# Create a dataframe from the log file
-X_meas = pd.read_csv(log_file, sep=';')  # new box dimensions
-X_meas = X_meas[X_meas["Status 3"] != 00000000] # drops all zero dimensions
-X_meas[['Length', 'Width', 'Height']] = (X_meas[['Length', 'Width', 'Height']]).round(1) # rounds all L, W, H to nearest tenth (5.799999 -> 5.8)
+# Create a dataframe of all the measurements from the log file
+meas_df = pd.read_csv(log_file, sep=';')  # new box dimensions
+meas_df = meas_df[meas_df["Status 3"] != 00000000] # drops all zero dimensions
+meas_df[['Length', 'Width', 'Height']] = (meas_df[['Length', 'Width', 'Height']]).round(1) # rounds all L, W, H to nearest tenth (5.799999 -> 5.8)
 
 # Predicts the actual dimensions based on measured data
-X_meas.loc[:,'Box'] = knn.predict((X_meas[['Length', 'Width', 'Height']]))
+meas_df.loc[:,'Box'] = knn.predict((meas_df[['Length', 'Width', 'Height']]))
 
-# Merge the DataFrames based on the label column, preserving the order of X_meas
-merged_df = X_meas.merge(validate, on='Box', suffixes=(' Measured', ' Actual'), how='left')
+# Merge the DataFrames based on the label column, preserving the order of meas_df
+merged_df = meas_df.merge(validate, on='Box', suffixes=(' Measured', ' Actual'), how='left')
 
-# Rename the columns
+# Rename the columns for cleaner look in Excel
 merged_df.rename(columns={
     'Length Measured': 'Length',
-    'Width Measured': 'Width',
+    'Width Measured' : 'Width',
     'Height Measured': 'Height'
 }, inplace=True)
 
@@ -51,8 +79,14 @@ merged_df.rename(columns={
 for col in ['Length', 'Width', 'Height']:
     merged_df[f'Δ{col}'] = merged_df[f'{col}'] - merged_df[f'{col} Actual']
 
+result = [merged_df[f'{col}'] for col in ['Length', 'Width', 'Height']]
+
+expected = [merged_df[f'{col} Actual'] for col in ['Length', 'Width', 'Height']]
+
+difference_df = merged_df.apply(calculate_min_difference, axis=1)
+
 # Select only the columns containing the differences
-difference_df = merged_df[[f'Δ{col}' for col in ['Length', 'Width', 'Height']]]
+# difference_df = merged_df[[f'Δ{col}' for col in ['Length', 'Width', 'Height']]]
 
 # Calculate the frequency each column is out of spec (greater than ± 0.2)
 count_ole, count_owi, count_ohi = [sum((round(difference_df[f'Δ{dim}'].abs(), 1) > 0.2)) for dim in ['Length', 'Width', 'Height']]

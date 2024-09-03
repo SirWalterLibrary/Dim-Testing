@@ -20,6 +20,6 @@ if file_paths:
         # filtered_df = combined_df[combined_df["Status 3"] != 00000000]
 
     # Write to a combined log file
-    combined_df.to_csv('Old_APU.log', index=False, sep=';')
+    combined_df.to_csv('combine.log', index=False, sep=';')
 else:
     print("No files selected")
