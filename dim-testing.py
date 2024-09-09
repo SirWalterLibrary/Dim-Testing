@@ -82,8 +82,6 @@ button.pack()
 # Run the tkinter main loop
 root.mainloop()
 
-
-
 # Select the log file
 log_file = filedialog.askopenfilename(
     title="Select a Log File",
