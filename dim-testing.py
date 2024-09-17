@@ -1,19 +1,47 @@
 import os
 import sys
+import json
+import time
 import joblib
+import logging
 import pandas as pd
 import tkinter as tk
 from tkinter import ttk
 from tkinter import filedialog
 from itertools import permutations
 
+def save_excel_file(output_df, excel_file):
+    # Extract the file name without the folder name
+    excel_filename = os.path.basename(excel_file)
+
+    while True:
+        try:
+            # Try to save the DataFrame to Excel
+            output_df.to_excel(excel_file, index=False)
+            print(f"File saved successfully to {excel_filename}")
+            break  # Exit the loop once the file is saved
+        except PermissionError:
+            # This exception occurs if the file is open in Excel
+            print(f"\nUnable to save results to an Excel file because \"{excel_filename}\" is currently open. Please close the file to proceed.")
+            user_input = input("Are you ready to retry? (Y/n): ").strip().lower()
+            if user_input == 'n':
+                print("Exiting without saving.")
+                break
+            elif user_input == 'y':
+                print("Retrying to save the file...")
+                time.sleep(1)  # Wait for a second before retrying
+            else:
+                print("Invalid input. Please type 'Y' or 'n'.")
+
 def calculate_min_difference(row):
+    # Specify Actual vs Result dimensions
     actual_dims = (row['Length Actual'], row['Width Actual'], row['Height Actual'])
     result_dims = (row['Length'], row['Width'], row['Height'])
     
     # Generate all permutations (rotations) of the expected dimensions
     rotations = list(permutations(actual_dims))
     
+    # Initialize parameters for finding the best rotation
     min_difference = None
     best_rotation = None
     
@@ -38,10 +66,25 @@ def resource_path(relative_path):
         base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
         return os.path.join(base_path, relative_path)
 
+def save_selected_boxes(selected_boxes, file_path=resource_path("selected_boxes.json")):
+    """Save selected boxes to a file."""
+    with open(file_path, 'w') as f:
+        json.dump(selected_boxes, f)
+
+def load_selected_boxes(file_path=resource_path("selected_boxes.json")):
+    """Load selected boxes from a file."""
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as f:
+            return json.load(f)
+    return None
+
 def filter_boxes():
     global filtered_boxes  # Declare filtered_df as a global variable
     # Get the selected box sizes
     selected_boxes = [box for box, var in checkboxes.items() if var.get() == '1']
+
+        # Save the selected boxes to a file
+    save_selected_boxes(selected_boxes)
     
     # Filter the DataFrame to include only the selected box sizes
     filtered_boxes = box_df[box_df['Box'].isin(selected_boxes)]
@@ -49,130 +92,158 @@ def filter_boxes():
     # Close the UI
     root.destroy()
 
-# To load the model
-knn = joblib.load(resource_path('model.joblib'))
+# Get the user's Downloads folder path
+downloads_folder = os.path.join(os.path.expanduser("~"), "Downloads")
 
-# Load the CSV with actual dimensions
-box_df = pd.read_csv('Xactual.csv')
+# Setup logging
+log_file = os.path.join(downloads_folder, "app.log")
+logging.basicConfig(filename=resource_path('app.log'), level=logging.DEBUG)
 
-# Get unique box sizes from the "Box" column
-unique_boxes = box_df['Box'].unique()
+try:
+    # To load the model
+    knn = joblib.load(resource_path('model.joblib'))
 
-# Create the tkinter window
-root = tk.Tk()
-root.title("Select Relevant Box Sizes")
+    # Load the CSV with actual dimensions
+    box_df = pd.read_csv(resource_path('Xactual.csv'))
 
-# Make the window stay on top of other windows
-root.attributes('-topmost', True)
+    # Get unique box sizes from the "Box" column
+    unique_boxes = box_df['Box'].unique()
 
-# Create a dictionary to hold checkboxes
-checkboxes = {}
+    # Load previously saved selected boxes (if available)
+    previous_selected_boxes = load_selected_boxes()
 
-# Add a checkbox for each unique box size
-for box in unique_boxes:
-    var = tk.StringVar(value='1')  # Set default to selected
-    checkbox = ttk.Checkbutton(root, text=box, variable=var)
-    checkbox.pack(anchor='w')
-    checkboxes[box] = var
+    # Create the tkinter window
+    root = tk.Tk()
+    root.title("Select Relevant Box Sizes")
 
-# Add a button to confirm selection
-button = ttk.Button(root, text="Filter Boxes", command=filter_boxes)
-button.pack()
+    # Make the window stay on top of other windows
+    root.attributes('-topmost', True)
 
-# Run the tkinter main loop
-root.mainloop()
+    # Create a dictionary to hold checkboxes
+    checkboxes = {}
 
-# Select the log file
-log_file = filedialog.askopenfilename(
-    title="Select a Log File",
-    filetypes=[("Log Files", "*.log"), ("All Files", "*.*")]
-)
+    # Add a checkbox for each unique box size
+    for box in unique_boxes:
+        var = tk.StringVar(value='1' if previous_selected_boxes and box in previous_selected_boxes else '0')  # Set default based on saved data
+        checkbox = ttk.Checkbutton(root, text=box, variable=var)
+        checkbox.pack(anchor='w')
+        checkboxes[box] = var
 
-# Print the name of the path of log file
-print("Current file path:", os.path.abspath(log_file), "\n")
+    # Add a button to confirm selection
+    button = ttk.Button(root, text="Filter Boxes", command=filter_boxes)
+    button.pack()
 
-# Create a dataframe of all the measurements from the log file
-meas_df = pd.read_csv(log_file, sep=';')  # new box dimensions
-meas_df = meas_df[meas_df["Status 3"] != 00000000] # drops all zero dimensions
-meas_df[['Length', 'Width', 'Height']] = (meas_df[['Length', 'Width', 'Height']]).round(1) # rounds all L, W, H to nearest tenth (5.799999 -> 5.8)
+    # Run the tkinter main loop
+    root.mainloop()
 
-# Predicts the actual dimensions based on measured data
-meas_df.loc[:,'Box'] = knn.predict((meas_df[['Length', 'Width', 'Height']]))
+    # Select the log file
+    dims_file = filedialog.askopenfilename(
+        title="Select a Log File",
+        filetypes=[("Log Files", "*.log"), ("All Files", "*.*")]
+    )
 
-# Merge the DataFrames based on the label column, preserving the order of meas_df
-merged_df = meas_df.merge(filtered_boxes, on='Box', suffixes=(' Measured', ' Actual'), how='left')
+    # Print the name of the path of log file
+    print("Current file path:", os.path.abspath(dims_file), "\n")
 
-# Rename the columns for cleaner look in Excel
-merged_df.rename(columns={
-    'Length Measured': 'Length',
-    'Width Measured' : 'Width',
-    'Height Measured': 'Height'
-}, inplace=True)
+    # Create a dataframe of all the measurements from the log file
+    meas_df = pd.read_csv(dims_file, sep=';')  # new box dimensions
+    meas_df = meas_df[meas_df["Status 3"] != 00000000] # drops all zero dimensions
+    meas_df[['Length', 'Width', 'Height']] = (meas_df[['Length', 'Width', 'Height']]).round(1) # rounds all L, W, H to nearest tenth (5.799999 -> 5.8)
 
-# Subtract the corresponding features
-for col in ['Length', 'Width', 'Height']:
-    merged_df[f'Δ{col}'] = merged_df[f'{col}'] - merged_df[f'{col} Actual']
+    # Predicts the actual dimensions based on measured data
+    meas_df.loc[:,'Box'] = knn.predict((meas_df[['Length', 'Width', 'Height']]))
 
-merged_df[[f'Δ{col}' for col in ['Length', 'Width', 'Height']]] = merged_df.apply(calculate_min_difference, axis=1).astype(float)
+    # Merge the DataFrames based on the label column, preserving the order of meas_df
+    merged_df = meas_df.merge(filtered_boxes, on='Box', suffixes=(' Measured', ' Actual'), how='left')
 
-# Select only the columns containing the differences
-difference_df = merged_df[[f'Δ{col}' for col in ['Length', 'Width', 'Height']]]
+    # Rename the columns for cleaner look in Excel
+    merged_df.rename(columns={
+        'Length Measured': 'Length',
+        'Width Measured' : 'Width',
+        'Height Measured': 'Height'
+    }, inplace=True)
 
-# Calculate the frequency each column is out of spec (greater than ± 0.2)
-count_ole, count_owi, count_ohi = [sum((round(difference_df[f'Δ{dim}'].abs(), 1) > 0.2)) for dim in ['Length', 'Width', 'Height']]
-    
-# Calculate the number of rows with populated dimensions
-total_rows = difference_df.shape[0] 
+    # Subtract the corresponding features
+    for col in ['Length', 'Width', 'Height']:
+        merged_df[f'Δ{col}'] = merged_df[f'{col}'] - merged_df[f'{col} Actual']
 
-# Check whether any dimensions are out of spec
-if count_ole > 0 or count_owi > 0 or count_ohi > 0:
+    # Align Actual vs Result dimensions (i.e. "5.2x6.2x2.0" would be "6x5x2" box but calculated difference would be "5x6x2")
+    merged_df[[f'Δ{col}' for col in ['Length', 'Width', 'Height']]] = merged_df.apply(calculate_min_difference, axis=1).astype(float)
 
-    # Print the occurrences each time length, width, and height is off 
-    print(f"Length is off:  {count_ole} out of {total_rows} time(s)")
-    print(f"Width  is off:  {count_owi} ouf of {total_rows} time(s)")
-    print(f"Height is off:  {count_ohi} out of {total_rows} time(s)\n")
+    # Select only the columns containing the differences
+    difference_df = merged_df[[f'Δ{col}' for col in ['Length', 'Width', 'Height']]]
 
-else:
-    print(f"No errors!") 
+    # Calculate the frequency each column is out of spec (greater than ± 0.2)
+    count_ole, count_owi, count_ohi = [sum((round(difference_df[f'Δ{dim}'].abs(), 1) > 0.2)) for dim in ['Length', 'Width', 'Height']]
+        
+    # Calculate the number of rows with populated dimensions
+    total_rows = difference_df.shape[0] 
 
-# Filter the dimensions that failed
-mask = (round(merged_df['ΔLength'].abs(), 1) > 0.2) | \
-       (round(merged_df['ΔWidth'].abs(), 1) > 0.2) | \
-       (round(merged_df['ΔHeight'].abs(), 1) > 0.2)
+    # Check whether any dimensions are out of spec
+    if count_ole > 0 or count_owi > 0 or count_ohi > 0:
 
-filtered_df = merged_df[mask]
-total_bad = filtered_df.shape[0]
+        # Print the occurrences each time length, width, and height is off 
+        print(f"Length is off:  {count_ole} out of {total_rows} time(s)")
+        print(f"Width  is off:  {count_owi} ouf of {total_rows} time(s)")
+        print(f"Height is off:  {count_ohi} out of {total_rows} time(s)\n")
 
-# Count occurrences of each unique set of box failures
-failure_counts = filtered_df.groupby(['Box']).size()
+    else:
+        print(f"All populated dimensions are within spec!") 
 
-# Sort the filtered DataFrame by the 'Index' column
-sorted_failed_boxes = filtered_df[['Index', 'Length', 'Width', 'Height', 'Box']].sort_values(by=['Box', 'Index'])
+    # Filter the dimensions that failed
+    mask = (round(merged_df['ΔLength'].abs(), 1) > 0.2) | \
+        (round(merged_df['ΔWidth'].abs(), 1) > 0.2) | \
+        (round(merged_df['ΔHeight'].abs(), 1) > 0.2)
 
-# Convert the sorted DataFrame to a string without the default index
-failed_boxes = sorted_failed_boxes.to_string(index=False)
+    # Filter out the bad dimensions and count number of occurrences
+    filtered_df = merged_df[mask]
+    total_bad = filtered_df.shape[0]
 
-# Print boxes that fail
-for label, count in failure_counts.items():
-    print(f"Box {label} is out of spec {count} time(s)")
-    
-# Set the display option to expand the column width
-pd.set_option('display.max_colwidth', None)
+    # Count occurrences of each unique set of box failures
+    failure_counts = filtered_df.groupby(['Box']).size()
 
-# Calculate and print the success rate
-success_rate = (total_rows - total_bad) / total_rows * 100
-print(f"\n{total_bad} out of {total_rows} boxes failed: {success_rate:.2f}% success rate\n\n", failed_boxes)
+    # Sort the filtered DataFrame by the 'Index' column
+    sorted_failed_boxes = filtered_df[['Index', 'Length', 'Width', 'Height', 'Box']].sort_values(by=['Box', 'Index'])
 
+    # Convert the sorted DataFrame to a string without the default index
+    failed_boxes = sorted_failed_boxes.to_string(index=False)
 
-# Get the base name (filename with extension)
-base_name = os.path.basename(log_file)
+    # Print boxes that fail
+    for label, count in failure_counts.items():
+        print(f"Box {label} is out of spec {count} time(s)")
+        
+    # Set the display option to expand the column width
+    pd.set_option('display.max_colwidth', None)
 
-# Split the base name into name and extension
-file_name, file_extension = os.path.splitext(base_name)
-output_df = merged_df[['Index', 'Length', 'Width', 'Height', 'Box', 'ΔLength', 'ΔWidth', 'ΔHeight']]
+    # Calculate and print the success rate; print failed boxes if applicable
+    success_rate = (total_rows - total_bad) / total_rows * 100
+    print(f"\n{total_bad} out of {total_rows} boxes failed: {success_rate:.2f}% success rate\n", failed_boxes if total_bad else "")
 
-# Create a directory to store HTML files
-output_dir = 'excel_output'
-os.makedirs(output_dir, exist_ok=True)
+    # Get the base name (filename with extension)
+    base_name = os.path.basename(dims_file)
 
-output_df.to_excel(os.path.join(output_dir, file_name + '.xlsx'), index=False)
+    # Split the base name into name and extension
+    file_name, file_extension = os.path.splitext(base_name)
+    output_df = merged_df[['Index', 'Length', 'Width', 'Height', 'Box', 'ΔLength', 'ΔWidth', 'ΔHeight']]
+
+    # Create a directory to store Excel files
+    output_dir = 'excel output'
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Create the output directory in Downloads if it doesn't exist
+    output_path = os.path.join(downloads_folder, output_dir)
+    os.makedirs(output_path, exist_ok=True)
+
+    # Set the full path for the Excel file
+    excel_file = os.path.join(output_path, file_name + '.xlsx')
+
+    # Call the save function with the DataFrame and file path
+    save_excel_file(output_df, excel_file)
+
+    # Optionally, open the saved file
+    os.startfile(excel_file)
+
+except Exception as e:
+    logging.error(f"An error occurred: {e}")
+
+input("Press Enter to exit...")
