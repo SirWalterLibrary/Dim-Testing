@@ -33,6 +33,41 @@ def save_excel_file(output_df, excel_file):
             else:
                 print("Invalid input. Please type 'Y' or 'n'.")
 
+def load_file():
+    while True:
+        try:
+            # Open file dialog to select a log file
+            file = filedialog.askopenfilename(
+                title="Select a Log File",
+                filetypes=[("Log Files", "*.log"), ("All Files", "*.*")]
+            )
+            
+            # If user cancels the dialog, file will be empty
+            if not file:
+                print("No file selected. Exiting...")
+                return None
+            
+            # Print the absolute path of the selected file
+            print("Current file path:", os.path.abspath(file), "\n")
+            return file
+
+        except PermissionError:
+            # Handle the case when the file is open in Excel or locked
+            print("PermissionError: The log file is open or locked.")
+        
+        # Prompt the user if they want to retry
+        while True:
+            user_input = input("Do you want to retry? (Y/n): ").strip().lower()
+            if user_input == 'n':
+                print("Exiting...")
+                return None
+            elif user_input == 'y':
+                print("Retrying...")
+                time.sleep(1)  # Optional sleep before retry
+                break
+            else:
+                print("Invalid input. Please type 'Y' or 'n'.")
+
 def calculate_min_difference(row):
     # Specify Actual vs Result dimensions
     actual_dims = (row['Length Actual'], row['Width Actual'], row['Height Actual'])
@@ -96,8 +131,8 @@ def filter_boxes():
 downloads_folder = os.path.join(os.path.expanduser("~"), "Downloads")
 
 # Setup logging
-log_file = os.path.join(downloads_folder, "app.log")
-logging.basicConfig(filename=resource_path('app.log'), level=logging.DEBUG)
+log_file = os.path.join(downloads_folder, "error.log")
+logging.basicConfig(filename=resource_path(log_file), level=logging.DEBUG)
 
 try:
     # To load the model
@@ -137,13 +172,7 @@ try:
     root.mainloop()
 
     # Select the log file
-    dims_file = filedialog.askopenfilename(
-        title="Select a Log File",
-        filetypes=[("Log Files", "*.log"), ("All Files", "*.*")]
-    )
-
-    # Print the name of the path of log file
-    print("Current file path:", os.path.abspath(dims_file), "\n")
+    dims_file = load_file()
 
     # Create a dataframe of all the measurements from the log file
     meas_df = pd.read_csv(dims_file, sep=';')  # new box dimensions
@@ -224,13 +253,12 @@ try:
 
     # Split the base name into name and extension
     file_name, file_extension = os.path.splitext(base_name)
-    output_df = merged_df[['Index', 'Length', 'Width', 'Height', 'Box', 'ΔLength', 'ΔWidth', 'ΔHeight']]
 
-    # Create a directory to store Excel files
+    # Create an output DataFrame to export to an Excel file with only valid dimensions
+    output_df = merged_df[merged_df["Box"] != "0x0x0"][['Index', 'Length', 'Width', 'Height', 'Box', 'ΔLength', 'ΔWidth', 'ΔHeight']]
+
+    # Create the Excel output directory in Downloads if it doesn't exist
     output_dir = 'excel output'
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Create the output directory in Downloads if it doesn't exist
     output_path = os.path.join(downloads_folder, output_dir)
     os.makedirs(output_path, exist_ok=True)
 
@@ -245,5 +273,6 @@ try:
 
 except Exception as e:
     logging.error(f"An error occurred: {e}")
+    os.startfile(log_file)
 
 input("Press Enter to exit...")
