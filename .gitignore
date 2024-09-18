@@ -167,6 +167,8 @@ models/
 # test python file
 test.py
 
-# UI project
+# project
 dim-testing
 
+# json file
+selected_boxes.json

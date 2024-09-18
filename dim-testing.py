@@ -10,7 +10,10 @@ from tkinter import ttk
 from tkinter import filedialog
 from itertools import permutations
 
-def save_excel_file(output_df, excel_file):
+def save_excel_file(output_df, excel_file, stdout):
+    # Reset stdout back to original
+    sys.stdout = stdout  
+
     # Extract the file name without the folder name
     excel_filename = os.path.basename(excel_file)
 
@@ -111,7 +114,7 @@ def load_selected_boxes(file_path=resource_path("selected_boxes.json")):
     return None
 
 def filter_boxes(window, df, checkboxes):
-    global filtered_boxes  # Declare filtered_df as a global variable
+    global selected_boxes, filtered_boxes  # Declare filtered_df as a global variable
     # Get the selected box sizes
     selected_boxes = [box for box, var in checkboxes.items() if var.get() == '1']
 
@@ -124,12 +127,20 @@ def filter_boxes(window, df, checkboxes):
     # Close the UI
     window.destroy()
 
+def setup_logging(folder):
+    # Only set up logging if an error is detected
+    log_file = os.path.join(folder, "error.log")
+    logging.basicConfig(filename=log_file, level=logging.ERROR)
+
+    return logging
+
 # Get the user's Downloads folder path
 downloads_folder = os.path.join(os.path.expanduser("~"), "Downloads")
 
 def main():
-    # Redirect stdout to a file
     try:
+        original_stdout = sys.stdout  # Save the original stdout
+        print("Running script...")
         # Define the output directory and filename
         dims_file = load_file()
         if not dims_file:
@@ -139,7 +150,7 @@ def main():
         base_name = os.path.basename(dims_file)
 
         # Split the base name into filename and extension
-        file_name, file_extension = os.path.splitext(base_name)
+        file_name, _ = os.path.splitext(base_name)
 
         # Create a directory with filename
         output_path = os.path.join(downloads_folder, f"output/{file_name}")
@@ -149,7 +160,6 @@ def main():
 
         # Redirect stdout to the summary file
         with open(summary_file, 'w') as file:
-            original_stdout = sys.stdout  # Save the original stdout
             sys.stdout = file  # Redirect stdout to the file
 
             # To load the model
@@ -195,6 +205,7 @@ def main():
 
             # Predicts the actual dimensions based on measured data
             meas_df.loc[:,'Box'] = knn.predict((meas_df[['Length', 'Width', 'Height']]))
+            meas_df = meas_df[meas_df['Box'].isin(selected_boxes)] # drops unselected boxes
 
             # Merge the DataFrames based on the label column, preserving the order of meas_df
             merged_df = meas_df.merge(filtered_boxes, on='Box', suffixes=(' Measured', ' Actual'), how='left')
@@ -260,19 +271,17 @@ def main():
 
             # Calculate and print the success rate; print failed boxes if applicable
             success_rate = (total_rows - total_bad) / total_rows * 100
-            print(f"\n{total_bad} out of {total_rows} boxes failed: {success_rate:.2f}% success rate\n", "\nFailed boxes:\n", failed_boxes if total_bad else "")
-
-
+            print(f"\n{total_bad} out of {total_rows} boxes failed: {success_rate:.2f}% success rate\n", f"\nFailed boxes:\n{failed_boxes}" if total_bad else "")
 
             # Create an output DataFrame to export to an Excel file with only valid dimensions
-            output_df = merged_df[merged_df["Box"] != "0x0x0"][['Index', 'Length', 'Width', 'Height', 'Box', 'ΔLength', 'ΔWidth', 'ΔHeight']]
+            output_df = merged_df[['Index', 'Length', 'Width', 'Height', 'Box', 'ΔLength', 'ΔWidth', 'ΔHeight']]
 
             # Set the full path for the Excel file
             excel_file = os.path.join(output_path, file_name + '.xlsx')
 
             # Call the save function with the DataFrame and file path
             time.sleep(1)
-            save_excel_file(output_df, excel_file)
+            save_excel_file(output_df, excel_file, original_stdout)
 
             # Optionally, open the saved file
             os.startfile(output_path)
@@ -280,7 +289,11 @@ def main():
         sys.stdout = original_stdout  # Reset stdout back to original
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        # Initialize logging only when an error is caught
+        logging = setup_logging(downloads_folder)
+        logging.error(f"An error occurred: {e}", exc_info=True)
+
+    input("Press Enter to exit...")
 
 if __name__ == "__main__":
     # Run the main program
