@@ -293,8 +293,6 @@ def main():
         logging = setup_logging(downloads_folder)
         logging.error(f"An error occurred: {e}", exc_info=True)
 
-    input("Press Enter to exit...")
-
 if __name__ == "__main__":
     # Run the main program
     main()
