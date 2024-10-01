@@ -5,10 +5,43 @@ import time
 import joblib
 import logging
 import pandas as pd
-import tkinter as tk
-from tkinter import ttk
-from tkinter import filedialog
+import tkinter as tk 
 from itertools import permutations
+from tkinter import filedialog, ttk, font
+
+# Get the user's Downloads folder path
+downloads_folder = os.path.join(os.path.expanduser("~"), "Downloads")
+
+# File to store the tolerances
+tol_file = 'tolerances.json'
+
+def load_values():
+    """Load the last used values from a JSON file."""
+    if os.path.exists(tol_file):
+        with open(tol_file, 'r') as f:
+            return json.load(f)
+    return {"length": 0.2, "width": 0.2, "height": 0.2}  # Default values
+
+def store_values():
+    """Store the current entry values to a JSON file."""
+    tolerances = {
+        "length": float(length_tol_entry.get()),
+        "width":  float(width_tol_entry.get()),
+        "height": float(height_tol_entry.get())
+    }
+    
+    with open(tol_file, 'w') as f:
+        json.dump(tolerances, f)
+
+def validate_numeric_input(action, value_if_allowed):
+    # Validate numeric input (allows decimal values)
+    if action != '1':  # If action is not '1', it means it's not an insert action
+        return True
+    try:
+        float(value_if_allowed)
+        return True
+    except ValueError:
+        return False
 
 def save_excel_file(output_df, excel_file, stdout):
     # Reset stdout back to original
@@ -36,38 +69,17 @@ def save_excel_file(output_df, excel_file, stdout):
                 print("Invalid input. Please type 'Y' or 'n'.")
 
 def load_file():
-    while True:
-        try:
-            # Open file dialog to select a log file
-            file = filedialog.askopenfilename(
-                title="Select a Log File",
-                filetypes=[("Log Files", "*.log"), ("All Files", "*.*")]
-            )
-            
-            # If user cancels the dialog, file will be empty
-            if not file:
-                print("No file selected. Exiting...")
-                return None
-            
-            return file
-
-        except PermissionError:
-            # Handle the case when the file is open in Excel or locked
-            print("PermissionError: The log file is open or locked.")
-        
-        # Prompt the user if they want to retry
-        while True:
-            user_input = input("Do you want to retry? (Y/n): ").strip().lower()
-            if user_input == 'n':
-                print("Exiting...")
-                return None
-            elif user_input == 'y':
-                print("Retrying...")
-                time.sleep(1)  # Optional sleep before retry
-                break
-            else:
-                print("Invalid input. Please type 'Y' or 'n'.")
-
+    file_path = filedialog.askopenfilename(filetypes=[("Log Files", "*.log"), ("All Files", "*.*")])
+    if file_path:
+        # Extract the last few parts of the path
+        truncated_path = os.path.join(*file_path.split(os.sep)[-6:])  # Adjust the number as needed to control how much of the path to show
+        log_file_entry.delete(0, "end")  # Deletes entry if present
+        log_file_entry.insert(0, truncated_path)  # Inserts the entry with the truncated path
+        return file_path
+    else:
+        log_file_entry.config(text="No file selected.")
+        return None
+    
 def calculate_min_difference(row):
     # Specify Actual vs Result dimensions
     actual_dims = (row['Length Actual'], row['Width Actual'], row['Height Actual'])
@@ -113,7 +125,7 @@ def load_selected_boxes(file_path=resource_path("selected_boxes.json")):
             return json.load(f)
     return None
 
-def filter_boxes(window, df, checkboxes):
+def filter_boxes(df, checkboxes):
     global selected_boxes, filtered_boxes  # Declare filtered_df as a global variable
     # Get the selected box sizes
     selected_boxes = [box for box, var in checkboxes.items() if var.get() == '1']
@@ -123,31 +135,32 @@ def filter_boxes(window, df, checkboxes):
     
     # Filter the DataFrame to include only the selected box sizes
     filtered_boxes = df[df['Box'].isin(selected_boxes)]
-        
-    # Close the UI
-    window.destroy()
 
 def setup_logging(folder):
     # Only set up logging if an error is detected
     log_file = os.path.join(folder, "error.log")
     logging.basicConfig(filename=log_file, level=logging.ERROR)
 
-    return logging
+    return logging, log_file
 
-# Get the user's Downloads folder path
-downloads_folder = os.path.join(os.path.expanduser("~"), "Downloads")
+def save_selected_boxes(selected_boxes, file_path=resource_path("selected_boxes.json")):
+    """Save selected boxes to a file."""
+    with open(file_path, 'w') as f:
+        json.dump(selected_boxes, f)
 
-def main():
+def parse_log():
     try:
+        filter_boxes(box_df, checkboxes)
+
         original_stdout = sys.stdout  # Save the original stdout
         print("Running script...")
         # Define the output directory and filename
-        dims_file = load_file()
-        if not dims_file:
+        if not log_file_entry.get():
+            print("No valid file entered....")
             return
 
         # Get the base name (filename with extension)
-        base_name = os.path.basename(dims_file)
+        base_name = os.path.basename(log_file_entry.get())
 
         # Split the base name into filename and extension
         file_name, _ = os.path.splitext(base_name)
@@ -165,41 +178,8 @@ def main():
             # To load the model
             knn = joblib.load(resource_path('model.joblib'))
 
-            # Load the CSV with actual dimensions
-            box_df = pd.read_csv(resource_path('Xactual.csv'))
-
-            # Get unique box sizes from the "Box" column
-            unique_boxes = box_df['Box'].unique()
-
-            # Load previously saved selected boxes (if available)
-            previous_selected_boxes = load_selected_boxes()
-
-            # Create the tkinter window
-            root = tk.Tk()
-            root.title("Select Relevant Box Sizes")
-
-            # Make the window stay on top of other windows
-            root.attributes('-topmost', True)
-
-            # Create a dictionary to hold checkboxes
-            checkboxes = {}
-
-            # Add a checkbox for each unique box size
-            for box in unique_boxes:
-                var = tk.StringVar(value='1' if previous_selected_boxes and box in previous_selected_boxes else '0')  # Set default based on saved data
-                checkbox = ttk.Checkbutton(root, text=box, variable=var)
-                checkbox.pack(anchor='w')
-                checkboxes[box] = var
-
-            # Add a button to confirm selection
-            button = ttk.Button(root, text="Filter Boxes", command=lambda: filter_boxes(root, box_df, checkboxes))
-            button.pack()
-
-            # Run the tkinter main loop
-            root.mainloop()
-
             # Create a dataframe of all the measurements from the log file
-            meas_df = pd.read_csv(dims_file, sep=';')  # new box dimensions
+            meas_df = pd.read_csv(log_file_entry.get(), sep=';')  # new box dimensions
             meas_df = meas_df[meas_df["Status 3"] != 00000000] # drops all zero dimensions
             meas_df[['Length', 'Width', 'Height']] = (meas_df[['Length', 'Width', 'Height']]).round(1) # rounds all L, W, H to nearest tenth (5.799999 -> 5.8)
 
@@ -228,7 +208,9 @@ def main():
             difference_df = merged_df[[f'Δ{col}' for col in ['Length', 'Width', 'Height']]]
 
             # Calculate the frequency each column is out of spec (greater than ± 0.2)
-            count_ole, count_owi, count_ohi = [sum((round(difference_df[f'Δ{dim}'].abs(), 1) > 0.2)) for dim in ['Length', 'Width', 'Height']]
+            count_ole = sum((round(difference_df['ΔLength'].abs(), 1) > tolerances["length"]))
+            count_owi = sum((round(difference_df['ΔWidth'].abs(), 1) >  tolerances["width"]) )
+            count_ohi = sum((round(difference_df['ΔHeight'].abs(), 1) > tolerances["height"]))
                 
             # Calculate the number of rows with populated dimensions
             total_rows = difference_df.shape[0] 
@@ -245,9 +227,9 @@ def main():
                 print(f"All populated dimensions are within spec!") 
 
             # Filter the dimensions that failed
-            mask = (round(merged_df['ΔLength'].abs(), 1) > 0.2) | \
-                (round(merged_df['ΔWidth'].abs(), 1) > 0.2) | \
-                (round(merged_df['ΔHeight'].abs(), 1) > 0.2)
+            mask =  (round(merged_df['ΔLength'].abs(), 1) > tolerances["length"]) | \
+                    (round(merged_df['ΔWidth'].abs(),  1) > tolerances["width"] ) | \
+                    (round(merged_df['ΔHeight'].abs(), 1) > tolerances["height"])
 
             # Filter out the bad dimensions and count number of occurrences
             filtered_df = merged_df[mask]
@@ -286,12 +268,110 @@ def main():
             # Optionally, open the saved file
             os.startfile(output_path)
 
-        sys.stdout = original_stdout  # Reset stdout back to original
+        # sys.stdout = original_stdout  # Reset stdout back to original
 
     except Exception as e:
         # Initialize logging only when an error is caught
-        logging = setup_logging(downloads_folder)
+        logging, error_file = setup_logging(downloads_folder)
         logging.error(f"An error occurred: {e}", exc_info=True)
+        os.startfile(error_file)
+
+def main():
+    global log_file_entry, length_tol_entry, width_tol_entry, height_tol_entry, box_df, checkboxes, selected_boxes, tolerances
+
+    # Create the main window
+    root = tk.Tk()
+    root.title("Log Parser")
+    
+    # Make the window stay on top of other windows
+    root.attributes('-topmost', True)
+
+    # Set a fixed window size
+    root.geometry("500x500")  # You can adjust the size as needed
+
+    # Create the label with underlined text and center it across all 3 columns
+    label_font = font.Font(underline=True)  # Create a font object with underlined tex
+
+    # Validation to ensure only numeric values (including decimals) are entered
+    vcmd = (root.register(validate_numeric_input), '%d', '%P')
+
+    # Create a frame for importing a log file
+    frame_import = tk.Frame(root, padx=10, pady=10)
+    frame_import.grid(row=0, column=0, columnspan=3, sticky="ew")
+
+    import_button = tk.Button(frame_import, text="Import Log File", command=load_file)
+    import_button.grid(row=0, column=0, padx=5)
+
+    log_file_entry = tk.Entry(frame_import, text="No file selected.", width=55)
+    log_file_entry.grid(row=0, column=1, padx=10, sticky="w")
+
+    # Create a main frame to hold tolerances and boxes
+    frame_main = tk.Frame(root, padx=10, pady=10)
+    frame_main.grid(row=1, column=0, columnspan=3, sticky="ew")
+
+    # Create sub-frame for tolerances (top side)
+    frame_tolerances = tk.Frame(frame_main)
+    frame_tolerances.grid(row=0, column=0, columnspan=3, sticky="ew")
+
+    tk.Label(frame_tolerances, text="Enter Tolerances:", font=label_font).grid(row=0, column=0, sticky=tk.W)
+
+    tolerances = load_values()
+
+    # Length tolerance
+    tk.Label(frame_tolerances, text="Length :\t\t±").grid(row=1, column=0, sticky=tk.W)
+    length_tol_entry = tk.Entry(frame_tolerances, width=5, validate="key", validatecommand=vcmd)
+    length_tol_entry.insert(0, tolerances["length"])
+    length_tol_entry.grid(row=1, column=1, pady=5)
+    
+    # Width tolerance
+    tk.Label(frame_tolerances, text="Width  :\t\t±").grid(row=2, column=0, sticky=tk.W)
+    width_tol_entry = tk.Entry(frame_tolerances, width=5, validate="key", validatecommand=vcmd)
+    width_tol_entry.insert(0, tolerances["width"])
+    width_tol_entry.grid(row=2, column=1, pady=5)
+    
+    # Height tolerance
+    tk.Label(frame_tolerances, text="Height :\t\t±").grid(row=3, column=0, sticky=tk.W)
+    height_tol_entry = tk.Entry(frame_tolerances, width=5, validate="key", validatecommand=vcmd)
+    height_tol_entry.insert(0, tolerances["height"])
+    height_tol_entry.grid(row=3, column=1, pady=5)
+
+    # Load the CSV with actual dimensions
+    box_df = pd.read_csv(resource_path('Xactual.csv'))
+
+    # Get unique box sizes from the "Box" column
+    unique_boxes = box_df['Box'].unique()
+
+    # Load previously saved selected boxes (if available)
+    previous_selected_boxes = load_selected_boxes()
+
+    # Create a dictionary to hold checkboxes
+    checkboxes = {}
+
+    # Create sub-frame for tolerances (top side)
+    frame_boxes = tk.Frame(frame_main)
+    frame_boxes.grid(row=2, column=0, pady=10, columnspan=3, sticky="ew")
+
+    tk.Label(frame_boxes, text="Check Boxes Ran:", font=label_font).grid(row=0, column=0, sticky=tk.W)
+
+    # Determine the number of rows needed for 3 columns
+    num_boxes = len(unique_boxes)
+    num_columns = 3
+    num_rows = (num_boxes + num_columns - 1) // num_columns  # Calculate the number of rows
+
+    # Add a checkbox for each unique box size
+    for i, box in enumerate(unique_boxes):
+        var = tk.StringVar(value='1' if previous_selected_boxes and box in previous_selected_boxes else '0')  # Set default based on saved data
+        box_row = i % num_rows + 1  # Calculate row based on index
+        box_column = i // num_rows # Calculate column based on index
+        checkbox = ttk.Checkbutton(frame_boxes, text=box, variable=var)
+        checkbox.grid(row=box_row, column=box_column, sticky='w', padx=5, pady=5)  # Place each checkbox in the correct row and column
+        checkboxes[box] = var
+
+    run_button = tk.Button(frame_boxes, text="Filter Boxes", command=lambda: [parse_log(), store_values(), root.quit()])
+    run_button.grid(row=box_row+2, column=1, columnspan=3, sticky="ew")
+
+    # Run the Tkinter event loop
+    root.mainloop()
 
 if __name__ == "__main__":
     # Run the main program
