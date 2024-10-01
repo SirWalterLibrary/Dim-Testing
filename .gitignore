@@ -170,5 +170,6 @@ test.py
 # project
 dim-testing
 
-# json file
+# json files
 selected_boxes.json
+tolerances.json
