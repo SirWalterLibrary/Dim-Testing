@@ -173,3 +173,6 @@ dim-testing
 # json files
 selected_boxes.json
 tolerances.json
+
+# Excel files
+*.xlsx
