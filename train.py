@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 
 # Load the training dataset
-training = pd.read_csv('Xtrain.csv')
+training = pd.read_csv('data/Xtrain.csv')
 
 # Assume the CSV file has columns: 'length', 'width', 'height', 'label'
 X = training[['Length', 'Width', 'Height']]

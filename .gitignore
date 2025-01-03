@@ -176,3 +176,6 @@ tolerances.json
 
 # Excel files
 *.xlsx
+
+# JSON files
+*.json

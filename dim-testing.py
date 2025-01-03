@@ -336,7 +336,7 @@ def main():
     height_tol_entry.grid(row=3, column=1, pady=5)
 
     # Load the CSV with actual dimensions
-    box_df = pd.read_csv(resource_path('Xactual.csv'))
+    box_df = pd.read_csv(resource_path('data/Xactual.csv'))
 
     # Get unique box sizes from the "Box" column
     unique_boxes = box_df['Box'].unique()
