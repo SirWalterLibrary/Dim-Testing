@@ -29,5 +29,6 @@ if file_paths:
     output_path = os.path.join(output_dir, 'dims.log')
     combined_df.to_csv(output_path, index=False, sep=';')
     print(f"Combined log file saved to: {output_path}")
+    os.startfile(output_dir)
 else:
     print("No files selected")
