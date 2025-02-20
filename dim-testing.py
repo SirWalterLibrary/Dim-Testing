@@ -43,6 +43,9 @@ def validate_numeric_input(action, value_if_allowed):
     except ValueError:
         return False
 
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill, Font
+
 def save_excel_file(output_df, excel_file, stdout):
     # Reset stdout back to original
     sys.stdout = stdout  
@@ -53,10 +56,36 @@ def save_excel_file(output_df, excel_file, stdout):
     while True:
         try:
             # Try to save the DataFrame to Excel
-            output_df.to_excel(excel_file, index=False)
+            with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
+                output_df.to_excel(writer, index=False, sheet_name='Results')
+
+            # Load the workbook to apply formatting
+            wb = load_workbook(excel_file)
+            ws = wb.active  # Get active sheet
+
+            # Define colors for highlighting
+            fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")  # Light red background
+            font = Font(color="9C0006")  # Dark red
+
+            # Get tolerance values
+            tolerances = load_values()
+
+            # Find column indices for ΔLength, ΔWidth, and ΔHeight
+            col_indices = {col: idx + 1 for idx, col in enumerate(output_df.columns) if col in ['ΔLength', 'ΔWidth', 'ΔHeight']}
+
+            # Apply conditional formatting
+            for row_idx, row in enumerate(output_df.itertuples(), start=2):  # Start from row 2 (skip header)
+                for col, col_idx in col_indices.items():
+                    value = getattr(row, col)
+                    if abs(value) > tolerances[col.replace('Δ', '').lower()]:  # Check tolerance
+                        ws.cell(row=row_idx, column=col_idx).fill = fill
+                        ws.cell(row=row_idx, column=col_idx).font = font
+
+            # Save the formatted Excel file
+            wb.save(excel_file)
+
             break  # Exit the loop once the file is saved
         except PermissionError:
-            # This exception occurs if the file is open in Excel
             print(f"\nUnable to save results to an Excel file because \"{excel_filename}\" is currently open. Please close the file to proceed.")
             user_input = input("Are you ready to retry? (Y/n): ").strip().lower()
             if user_input == 'n':
@@ -180,7 +209,19 @@ def parse_log():
 
             # Create a dataframe of all the measurements from the log file
             meas_df = pd.read_csv(log_file_entry.get(), sep=';')  # new box dimensions
-            meas_df = meas_df[meas_df["Status 3"] != 00000000] # drops all zero dimensions
+  
+            # If "Status 3" exists
+            if "Status 3" in meas_df.columns:
+                meas_df = meas_df[meas_df["Status 3"] != 0]
+
+            # If "DIM State 3" exists
+            elif "DIM State 3" in meas_df.columns:
+                meas_df = meas_df[meas_df["DIM State 3"] != 0]
+                
+            else:
+                # Neither column exists
+                print("Neither 'Status 3' nor 'DIM State 3' columns are present in the DataFrame.")
+
             meas_df[['Length', 'Width', 'Height']] = (meas_df[['Length', 'Width', 'Height']]).round(1) # rounds all L, W, H to nearest tenth (5.799999 -> 5.8)
 
             # Predicts the actual dimensions based on measured data
@@ -191,11 +232,11 @@ def parse_log():
             merged_df = meas_df.merge(filtered_boxes, on='Box', suffixes=(' Measured', ' Actual'), how='left')
 
             # Rename the columns for cleaner look in Excel
-            merged_df.rename(columns={
+            merged_df = merged_df.rename(columns={
                 'Length Measured': 'Length',
                 'Width Measured' : 'Width',
                 'Height Measured': 'Height'
-            }, inplace=True)
+            })
 
             # Subtract the corresponding features
             for col in ['Length', 'Width', 'Height']:
@@ -256,7 +297,13 @@ def parse_log():
             print(f"\n{total_bad} out of {total_rows} boxes failed: {success_rate:.2f}% success rate\n", f"\nFailed boxes:\n{failed_boxes}" if total_bad else "")
 
             # Create an output DataFrame to export to an Excel file with only valid dimensions
-            output_df = merged_df[['Index', 'Length', 'Width', 'Height', 'Box', 'ΔLength', 'ΔWidth', 'ΔHeight']]
+            output_df = merged_df[['Index', 'Length', 'Width', 'Height', 'Box', 'ΔLength', 'ΔWidth', 'ΔHeight', 'DIM State 1', 'DIM State 2', 'DIM State 3']]
+
+            output_df = output_df.rename(columns={ 
+                'DIM State 1': 'State 1',
+                'DIM State 2': 'State 2',
+                'DIM State 3': 'State 3'
+            })
 
             # Set the full path for the Excel file
             excel_file = os.path.join(output_path, file_name + '.xlsx')
