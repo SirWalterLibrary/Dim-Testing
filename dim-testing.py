@@ -7,6 +7,8 @@ import logging
 import pandas as pd
 import tkinter as tk 
 from itertools import permutations
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill, Font
 from tkinter import filedialog, ttk, font
 
 # Get the user's Downloads folder path
@@ -43,9 +45,6 @@ def validate_numeric_input(action, value_if_allowed):
     except ValueError:
         return False
 
-from openpyxl import load_workbook
-from openpyxl.styles import PatternFill, Font
-
 def save_excel_file(output_df, excel_file, stdout):
     # Reset stdout back to original
     sys.stdout = stdout  
@@ -64,8 +63,11 @@ def save_excel_file(output_df, excel_file, stdout):
             ws = wb.active  # Get active sheet
 
             # Define colors for highlighting
-            fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")  # Light red background
-            font = Font(color="9C0006")  # Dark red
+            red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")  # Light red
+            red_font = Font(color="9C0006", bold=False)  # Dark red (unbolded)
+
+            green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")  # Light green
+            green_font = Font(color="006100", bold=False)  # Dark green (unbolded)
 
             # Get tolerance values
             tolerances = load_values()
@@ -77,9 +79,15 @@ def save_excel_file(output_df, excel_file, stdout):
             for row_idx, row in enumerate(output_df.itertuples(), start=2):  # Start from row 2 (skip header)
                 for col, col_idx in col_indices.items():
                     value = getattr(row, col)
-                    if abs(value) > tolerances[col.replace('Δ', '').lower()]:  # Check tolerance
-                        ws.cell(row=row_idx, column=col_idx).fill = fill
-                        ws.cell(row=row_idx, column=col_idx).font = font
+                    tolerance = tolerances[col.replace('Δ', '').lower()]  # Get tolerance for Length, Width, or Height
+
+                    # Apply red if outside tolerance, green if within tolerance
+                    if abs(value) > tolerance:
+                        ws.cell(row=row_idx, column=col_idx).fill = red_fill
+                        ws.cell(row=row_idx, column=col_idx).font = red_font
+                    else:
+                        ws.cell(row=row_idx, column=col_idx).fill = green_fill
+                        ws.cell(row=row_idx, column=col_idx).font = green_font
 
             # Save the formatted Excel file
             wb.save(excel_file)
