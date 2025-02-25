@@ -208,6 +208,8 @@ def parse_log():
 
         summary_file = os.path.join(output_path, "summary.txt")
 
+        
+
         # Redirect stdout to the summary file
         with open(summary_file, 'w') as file:
             sys.stdout = file  # Redirect stdout to the file
@@ -303,6 +305,18 @@ def parse_log():
             # Calculate and print the success rate; print failed boxes if applicable
             success_rate = (total_rows - total_bad) / total_rows * 100
             print(f"\n{total_bad} out of {total_rows} boxes failed: {success_rate:.2f}% success rate\n", f"\nFailed boxes:\n{failed_boxes}" if total_bad else "")
+            
+            # Track missing boxes
+            merged_boxes = merged_df['Box'].unique()  # Boxes in merged_df
+            missing_boxes = set(selected_boxes) - set(merged_boxes)  # Boxes that didn't make it
+            
+            # Print missing boxes information
+            if missing_boxes:
+                print("\nThe following selected boxes were not included in the results:")
+                for box in missing_boxes:
+                    print(f"- {box}")
+            else:
+                print("\nAll selected boxes were included in the results.")
 
             # Create an output DataFrame to export to an Excel file with only valid dimensions
             output_df = merged_df[['Index', 'Length', 'Width', 'Height', 'Box', 'ΔLength', 'ΔWidth', 'ΔHeight', 'DIM State 1', 'DIM State 2', 'DIM State 3']]
