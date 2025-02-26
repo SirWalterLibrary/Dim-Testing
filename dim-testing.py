@@ -312,7 +312,7 @@ def parse_log():
             
             # Print missing boxes information
             if missing_boxes:
-                print("\nThe following selected boxes were not included in the results:")
+                print("\nThe following selected boxes were missing in the results:")
                 for box in missing_boxes:
                     print(f"- {box}")
             else:
