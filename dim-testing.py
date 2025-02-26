@@ -11,11 +11,15 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font
 from tkinter import filedialog, ttk, font
 
+def resource_path(relative_path):
+        base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(base_path, relative_path)
+
 # Get the user's Downloads folder path
 downloads_folder = os.path.join(os.path.expanduser("~"), "Downloads")
 
 # File to store the tolerances
-tol_file = 'tolerances.json'
+tol_file = resource_path('tolerances.json')
 
 def load_values():
     """Load the last used values from a JSON file."""
@@ -145,10 +149,6 @@ def calculate_min_difference(row):
     formatted_difference = [f"{diff:.2f}" for diff in [result_dims[i] - best_rotation[i] for i in range(3)]]
     
     return pd.Series(formatted_difference, index=['Difference Length', 'Difference Width', 'Difference Height'])
-
-def resource_path(relative_path):
-        base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
-        return os.path.join(base_path, relative_path)
 
 def save_selected_boxes(selected_boxes, file_path=resource_path("selected_boxes.json")):
     """Save selected boxes to a file."""
@@ -405,7 +405,7 @@ def main():
     height_tol_entry.grid(row=3, column=1, pady=5)
 
     # Load the CSV with actual dimensions
-    box_df = pd.read_csv(resource_path('data/Xactual.csv'))
+    box_df = pd.read_csv(resource_path('Xactual.csv'))
 
     # Get unique box sizes from the "Box" column
     unique_boxes = box_df['Box'].unique()
