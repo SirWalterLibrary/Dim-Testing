@@ -1,9 +1,6 @@
 @echo off
 setlocal
 
-:: Navigate to the project folder
-cd %~dp0\Dim-Testing
-
 :: Activate the virtual environment
 call venv\Scripts\activate
 
